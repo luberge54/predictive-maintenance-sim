@@ -35,9 +35,11 @@ Not RMSE. Total maintenance cost of the policy, compared against two baselines:
 cd C:\Users\lukab\Developper\predictive-maintenance-sim
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env    # then paste your real API key into .env
 ```
+
+No API key and no network access required — the project runs entirely offline.
 
 ## Status
 
-Not started — waiting on DeepTech Scout.
+Step 0 done — cost model and decision policy defined in `docs/00-scoping.md`, mirrored as
+constants in `src/config.py`. Next: load the C-MAPSS data.

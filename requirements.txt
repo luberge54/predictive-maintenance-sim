@@ -14,11 +14,5 @@ matplotlib==3.11.1
 # Dashboard
 streamlit==1.61.1
 
-# Natural-language explanation of each recommendation (decision layer)
-anthropic==0.122.0
-
-# Reads the API key from .env — the key is never written in the code
-python-dotenv==1.2.3
-
 # Tests
 pytest==9.1.1
