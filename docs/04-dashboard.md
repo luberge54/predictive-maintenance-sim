@@ -85,7 +85,24 @@ runs a green suite.
 
 ---
 
-## 6. Limitations
+## 6. Regenerating the screenshots
+
+The two images in the README are captured from the running app, so they cannot drift from
+what the code actually renders:
+
+```powershell
+pip install playwright          # dev-only; deliberately not in requirements.txt
+streamlit run app.py --server.headless true --server.port 8532
+```
+
+Then drive a browser at it, hide Streamlit's own toolbar and deploy button — they are not
+part of this project — and shoot at `device_scale_factor=2` so the text stays crisp.
+Chrome or Edge already installed on the machine works via `channel="chrome"`, which avoids
+downloading a second browser.
+
+---
+
+## 7. Limitations
 
 - **Streamlit reruns the whole script on every interaction.** Correct here because
   everything expensive is cached, but it is the reason the caching is deliberate rather

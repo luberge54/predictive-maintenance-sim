@@ -132,7 +132,9 @@ def assumption_sweep(lead_time: int) -> pd.DataFrame:
         rows.append(
             {
                 "cost ratio": ratio,
-                "saving vs calendar": ours.saving_versus(calendar),
+                # Stored as a percentage, not a fraction: the chart axis shows this
+                # value verbatim, and "0.5" reads worse than "50" beside a % label.
+                "saving vs calendar": ours.saving_versus(calendar) * 100,
                 "intervention threshold": threshold,
             }
         )
@@ -166,8 +168,9 @@ def sidebar_assumptions() -> tuple[float, int]:
         value=config.DEFAULT_COST_RATIO,
         step=config.COST_RATIO_STEP,
         help=(
-            "The parameter the whole tool turns on. Nothing in the data sets it — it is "
-            "yours. Move it and watch the intervention threshold move."
+            "Nothing in the data sets this — it is yours. On this fleet it barely moves "
+            "the threshold, because a low threshold already catches every engine. What "
+            "it moves is whether monitoring is worth doing at all."
         ),
     )
     lead_time = st.sidebar.slider(
@@ -268,7 +271,7 @@ def section_assumption_sweep(cost_ratio: float, lead_time: int) -> None:
         st.line_chart(
             sweep[["saving vs calendar"]],
             x_label="an unplanned failure costs this many overhauls",
-            y_label="share of cost avoided",
+            y_label="% of the calendar's cost avoided",
         )
     with right:
         st.markdown("**Intervention threshold**")
@@ -284,7 +287,7 @@ def section_assumption_sweep(cost_ratio: float, lead_time: int) -> None:
     st.markdown(
         f"**Read the left chart first.** At your current assumption of "
         f"**{cost_ratio:.1f}x**, condition-based monitoring saves "
-        f"**{sweep.loc[cost_ratio, 'saving vs calendar']:.1%}**. "
+        f"**{sweep.loc[cost_ratio, 'saving vs calendar']:.1f}%**. "
         + (
             f"Below about **{breakeven_ratio:.1f}x** it saves nothing at all — a fixed "
             f"calendar is the better answer, and this tool should say so rather than "

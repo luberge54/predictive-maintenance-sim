@@ -24,6 +24,8 @@ the threshold, and were read exactly once. Costs are in units of one planned ove
 The calendar baseline gets the same optimisation pass as our own policy — beating a
 deliberately badly tuned baseline would prove nothing.
 
+![The dashboard: two assumption sliders, the thresholds they imply, and what each policy would have cost](docs/images/dashboard.png)
+
 ---
 
 ## Why this is not another RMSE project
@@ -74,6 +76,11 @@ eventually drops below 5 cycles and a low threshold already catches the whole fl
 The dashboard plots the losing end of that curve too. A tool that cannot say "keep your
 calendar" is a sales pitch, not an analysis.
 → [`docs/03-decision.md`](docs/03-decision.md#6-what-the-cost-ratio-actually-controls)
+
+![The saving plotted across the whole range of cost assumptions, including the negative end where a calendar is the better policy](docs/images/dashboard-curve.png)
+
+*Left: the saving across every cost assumption, including the negative end. Right: the
+intervention threshold, flat — because the cost ratio has nothing left to buy.*
 
 ---
 
