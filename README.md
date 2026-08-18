@@ -26,7 +26,7 @@ Not RMSE. Total maintenance cost of the policy, compared against two baselines:
 | 1 | Dataset: NASA Turbofan Engine Degradation (C-MAPSS) | `data/raw/` |
 | 2 | Feature engineering + RUL model (scikit-learn) | `models/` |
 | 3 | Decision layer: prediction + cost ratio -> recommendation | `src/` |
-| 4 | Streamlit dashboard with a cost-ratio slider | `src/app.py` |
+| 4 | Streamlit dashboard with a cost-ratio slider | `app.py` |
 | 5 | Narrative: the trade-off chosen and why | `docs/05-narrative.md` |
 
 ## Setup
@@ -35,6 +35,11 @@ Not RMSE. Total maintenance cost of the policy, compared against two baselines:
 cd C:\Users\lukab\Developper\predictive-maintenance-sim
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+# Download the C-MAPSS .txt files into data/raw/, then:
+python -m src.model        # train the model   (~5 s)
+python -m src.decision     # the cost report
+streamlit run app.py       # the dashboard
 ```
 
 No API key and no network access required — the project runs entirely offline.
@@ -53,9 +58,12 @@ No API key and no network access required — the project runs entirely offline.
   cost-optimised calendar policy, 78.3% cheaper than running to failure**, measured on
   engines that shaped neither the model nor the threshold. Write-up in
   `docs/03-decision.md`; run with `python -m src.decision`.
-- **Next** — the Streamlit dashboard.
+- **Step 4 done** — the Streamlit dashboard (`app.py`). Drag the cost assumption and
+  watch the answer move. Write-up in `docs/04-dashboard.md`; run with
+  `streamlit run app.py`.
+- **Next** — the narrative write-up.
 
-61 tests, no network access, no API key.
+71 tests, no network access, no API key.
 
 ## The result that took the longest to get right
 

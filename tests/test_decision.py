@@ -309,3 +309,68 @@ def test_the_watch_band_is_exactly_one_model_error_wide(costs):
 
     # Assert — the band is the model's own uncertainty, not a number someone picked
     assert fitted.watch_threshold - fitted.act_threshold == 13
+
+
+# --------------------------------------------------------------------------------------
+# Replaying once and pricing many times
+# --------------------------------------------------------------------------------------
+
+
+def test_the_threshold_grid_agrees_with_replaying_one_threshold(costs):
+    """The fast path and the obvious path must never disagree.
+
+    The grid exists so the dashboard can reprice thousands of candidates without
+    replaying them. That is only safe while it produces identical outcomes.
+    """
+    # Arrange
+    frame, predictions = fleet_with_predictions(
+        {1: list(range(40, 0, -1)), 2: list(range(70, 0, -1)), 3: [90] * 20}
+    )
+    grid = decision.replay_threshold_grid(frame, predictions)
+
+    # Act / Assert
+    for threshold in (1, 5, 20, 60, 150):
+        direct = decision.replay_condition_based(frame, predictions, threshold, costs)
+        from_grid = decision.outcome_at(grid, threshold, costs)
+        assert from_grid == direct
+
+
+def test_the_calendar_grid_agrees_with_replaying_one_interval(costs):
+    # Arrange
+    frame, _ = fleet_with_predictions({1: [0] * 120, 2: [0] * 260, 3: [0] * 40})
+    grid = decision.replay_calendar_grid(frame)
+
+    # Act / Assert
+    for interval in (10, 50, 137, 300):
+        direct = decision.replay_calendar(frame, interval, costs)
+        assert decision.outcome_at(grid, interval, costs) == direct
+
+
+def test_pricing_a_grid_matches_pricing_a_single_outcome(costs):
+    # Arrange
+    frame, predictions = fleet_with_predictions({1: list(range(30, 0, -1))})
+    grid = decision.replay_threshold_grid(frame, predictions)
+
+    # Act
+    priced = decision.price_grid(grid, costs)
+
+    # Assert
+    for threshold in (2, 15, 90):
+        row = grid.loc[threshold]
+        expected = costs.total(
+            int(row["interventions"]), int(row["failures"]), int(row["wasted_cycles"])
+        )
+        assert priced.loc[threshold] == pytest.approx(expected)
+
+
+def test_an_engine_appears_exactly_once_at_every_threshold(costs):
+    # Arrange — every engine is either pulled or lost, never both, never neither
+    frame, predictions = fleet_with_predictions(
+        {1: list(range(40, 0, -1)), 2: [90] * 20, 3: list(range(10, 0, -1))}
+    )
+
+    # Act
+    grid = decision.replay_threshold_grid(frame, predictions)
+
+    # Assert
+    assert (grid["interventions"] + grid["failures"] == 3).all()

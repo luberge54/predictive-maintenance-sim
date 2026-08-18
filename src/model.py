@@ -113,14 +113,19 @@ def score_official_test_set(model: TrainedModel) -> dict[str, float]:
     }
 
 
-def save(model: TrainedModel, path: Path = config.MODEL_FILE) -> Path:
+def save(model: TrainedModel, path: Path | None = None) -> Path:
     """Write the trained artefact to disk, creating the directory if needed.
+
+    `path` defaults to `config.MODEL_FILE`, resolved when the function runs rather than
+    when the module is imported — a default argument would freeze the path at import time
+    and silently ignore any later change to the configuration.
 
     Stored as a plain dictionary of library types, never as a pickled `TrainedModel`.
     Pickling a custom class records the module it was defined in, and a model trained by
     `python -m src.model` records `__main__` — reloadable only from that same entry
     point, and nowhere else. A dictionary carries no such dependency.
     """
+    path = path or config.MODEL_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
         {
@@ -134,13 +139,17 @@ def save(model: TrainedModel, path: Path = config.MODEL_FILE) -> Path:
     return path
 
 
-def load(path: Path = config.MODEL_FILE) -> TrainedModel:
+def load(path: Path | None = None) -> TrainedModel:
     """Read a trained artefact back.
+
+    `path` defaults to `config.MODEL_FILE`, resolved at call time for the same reason
+    `save` does.
 
     Raises:
         FileNotFoundError: if the model has not been trained yet.
         ValueError: if the file was written by an older artefact format.
     """
+    path = path or config.MODEL_FILE
     if not path.exists():
         raise FileNotFoundError(
             f"No trained model at {path}\nTrain one with:  python -m src.model"

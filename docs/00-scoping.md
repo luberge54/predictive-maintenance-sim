@@ -55,8 +55,9 @@ total_cost =   n_preventive_interventions x C_PREVENTIVE
 This single number is how every policy in section 3 is compared. Nothing else.
 
 > Do not hard-code a single ratio. Expose it as a slider in the dashboard and show how the
-> optimal intervention threshold moves across the range. The honest answer to "where does
-> your ratio come from?" is "it's yours to set — here is the curve".
+> result moves across the range. The honest answer to "where does your ratio come from?"
+> is "it's yours to set — here is the curve", including the part of the curve where this
+> tool is not worth using.
 
 ---
 
@@ -81,7 +82,9 @@ Grid search on the **validation set**, never on the test set:
 3. Compute `total_cost` with the formula in section 1.
 4. `T_act` = the `T` that minimises `total_cost`.
 
-Change the cost ratio, and `T_act` moves on its own. That is the entire point of the project.
+Change the cost ratio, and `T_act` is free to move. Whether it *does* move is an
+empirical question, and on FD001 the answer turned out to be "barely" — see
+`docs/03-decision.md`, section 6.
 
 ### How `T_watch` is derived
 

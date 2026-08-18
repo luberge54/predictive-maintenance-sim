@@ -8,10 +8,16 @@ modelling problem, it is a cost problem, and the cost assumption is stated rathe
 hidden (`docs/00-scoping.md`).
 
 **The threshold is not chosen, it is found.** Every candidate threshold is replayed
-across the whole fleet, the total cost of each is computed, and the cheapest wins. Change
-the cost of a failure relative to an overhaul and the threshold moves on its own — that
-is the entire argument of the project, and the reason the ratio is a slider rather than
-a constant.
+across the whole fleet, the total cost of each is computed, and the cheapest wins. The
+cost ratio is a slider rather than a constant because it is an assumption, and an
+assumption should be visible and arguable.
+
+What the ratio actually moves, on this dataset, is not the threshold. Every engine's
+prediction eventually drops near zero, so a very low threshold already catches the whole
+fleet and raising it prevents nothing further; the cost-optimal threshold barely responds
+to the ratio at all. What the ratio moves is **whether condition-based monitoring is
+worth doing** — from an 8% loss against a calendar at 1x, to a 51% saving at 20x. See
+`docs/03-decision.md`, section 6.
 
 Three policies are priced the same way so they can be compared honestly:
 
@@ -143,6 +149,96 @@ def replay_run_to_failure(frame: pd.DataFrame, costs: CostModel) -> FleetOutcome
     return _outcome(engines, interventions=0, wasted_cycles=0, costs=costs)
 
 
+def replay_threshold_grid(frame: pd.DataFrame, predicted_rul: pd.Series) -> pd.DataFrame:
+    """Fleet outcome at every candidate threshold, before any cost is applied.
+
+    What happens to a fleet does not depend on the cost model; only the price of what
+    happened does. Separating the two is what makes the cost ratio cheap to move: replay
+    the fleet once, then price the same outcomes as many times as the reader drags the
+    slider. Without it, drawing the saving curve across twenty cost ratios would mean
+    replaying several thousand fleets.
+
+    Returns:
+        One row per threshold, indexed by threshold, with the intervention, failure and
+        wasted-cycle counts.
+    """
+    features.require_chronological_order(frame)
+    engines = frame[config.UNIT_COLUMN].nunique()
+
+    rows = []
+    for threshold in range(config.THRESHOLD_GRID_MIN, config.THRESHOLD_GRID_MAX + 1):
+        triggered = frame[predicted_rul <= threshold]
+        first_trigger = triggered.groupby(config.UNIT_COLUMN, sort=False).first()
+        interventions = len(first_trigger)
+        rows.append(
+            {
+                "threshold": threshold,
+                "interventions": interventions,
+                "failures": engines - interventions,
+                "wasted_cycles": int(first_trigger[config.RUL_COLUMN].sum()),
+            }
+        )
+
+    return pd.DataFrame(rows).set_index("threshold")
+
+
+def replay_calendar_grid(frame: pd.DataFrame) -> pd.DataFrame:
+    """Fleet outcome at every candidate calendar interval, before any cost is applied."""
+    lifetimes = _lifetimes(frame)
+
+    rows = []
+    for interval in range(
+        config.CALENDAR_INTERVAL_GRID_MIN, config.CALENDAR_INTERVAL_GRID_MAX + 1
+    ):
+        survived = lifetimes >= interval
+        interventions = int(survived.sum())
+        rows.append(
+            {
+                "interval": interval,
+                "interventions": interventions,
+                "failures": len(lifetimes) - interventions,
+                "wasted_cycles": int((lifetimes[survived] - interval).sum()),
+            }
+        )
+
+    return pd.DataFrame(rows).set_index("interval")
+
+
+def price_grid(grid: pd.DataFrame, costs: CostModel) -> pd.Series:
+    """Total cost of every candidate in a replayed grid."""
+    return (
+        grid["interventions"] * costs.preventive
+        + grid["failures"] * costs.failure
+        + grid["wasted_cycles"] * costs.per_wasted_cycle
+    )
+
+
+def outcome_at(grid: pd.DataFrame, candidate: int, costs: CostModel) -> FleetOutcome:
+    """The priced outcome of one candidate already present in a replayed grid."""
+    row = grid.loc[candidate]
+    interventions = int(row["interventions"])
+    failures = int(row["failures"])
+    wasted = int(row["wasted_cycles"])
+    return FleetOutcome(
+        engines=interventions + failures,
+        interventions=interventions,
+        failures=failures,
+        wasted_cycles=wasted,
+        total_cost=costs.total(interventions, failures, wasted),
+    )
+
+
+def cheapest_threshold(
+    grid: pd.DataFrame,
+    costs: CostModel,
+    minimum_lead_time: int = config.MINIMUM_LEAD_TIME,
+) -> int:
+    """The cheapest threshold in an already-replayed grid that respects the lead time."""
+    floor = max(config.THRESHOLD_GRID_MIN, minimum_lead_time)
+    affordable_notice = grid[grid.index >= floor]
+    return int(price_grid(affordable_notice, costs).idxmin())
+
+
 def best_threshold(
     frame: pd.DataFrame,
     predicted_rul: pd.Series,
@@ -164,12 +260,8 @@ def best_threshold(
         minimum_lead_time: cycles of notice the maintenance organisation needs. Pass
             `config.THRESHOLD_GRID_MIN` to see the unconstrained optimum.
     """
-    floor = max(config.THRESHOLD_GRID_MIN, minimum_lead_time)
-    candidates = range(floor, config.THRESHOLD_GRID_MAX + 1)
-    return min(
-        candidates,
-        key=lambda t: replay_condition_based(frame, predicted_rul, t, costs).total_cost,
-    )
+    grid = replay_threshold_grid(frame, predicted_rul)
+    return cheapest_threshold(grid, costs, minimum_lead_time)
 
 
 def best_calendar_interval(frame: pd.DataFrame, costs: CostModel) -> int:
@@ -178,10 +270,7 @@ def best_calendar_interval(frame: pd.DataFrame, costs: CostModel) -> int:
     The baseline gets the same optimisation as our own policy. Beating a deliberately
     badly tuned calendar would prove nothing.
     """
-    candidates = range(
-        config.CALENDAR_INTERVAL_GRID_MIN, config.CALENDAR_INTERVAL_GRID_MAX + 1
-    )
-    return min(candidates, key=lambda n: replay_calendar(frame, n, costs).total_cost)
+    return int(price_grid(replay_calendar_grid(frame), costs).idxmin())
 
 
 # --------------------------------------------------------------------------------------

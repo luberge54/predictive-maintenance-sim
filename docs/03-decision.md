@@ -36,7 +36,7 @@ That single number prices every policy below. Nothing else is compared.
 
 Every candidate threshold from 1 to 150 cycles is replayed across the fleet — *intervene
 the first cycle the model predicts this much life or less* — and priced. The cheapest
-wins. Move the cost ratio and the threshold moves on its own.
+wins. Nothing is hand-picked.
 
 Here is that search on the 20 tuning engines:
 
@@ -175,8 +175,61 @@ be. Showing that band is more honest than reporting a single number and hoping.
 
 ---
 
-## 6. Limitations
+## 6. What the cost ratio actually controls
 
+The premise going in was: move the cost ratio, watch the threshold move. Running the sweep
+across the full slider range says otherwise.
+
+| Cost ratio | Cheapest threshold, unconstrained | Saving vs calendar |
+|---|---|---|
+| 1.0x | 1 | **−8.1%** |
+| 1.5x | 5 | +16.5% |
+| 2.0x | 5 | +22.4% |
+| 5.0x | 5 | +26.7% |
+| 10.0x | 5 | +37.3% |
+| 20.0x | 5 | +51.3% |
+
+**The threshold stops moving above 1.5x.** The reason is in the predictions: across the
+tuning fleet, the lowest value the model ever reaches for an engine runs from 1.1 to 4.8
+cycles. Every engine passes below 5. So a threshold of 5 already catches the entire fleet,
+and raising it prevents no further failure however expensive a failure becomes — it only
+scraps more good life. The cost ratio has nothing left to buy.
+
+So the honest statement is not "the ratio sets the threshold". It is:
+
+> **The cost ratio does not decide *when* to intervene. It decides *whether this tool is
+> worth using at all*.**
+
+At 1.0x — a failure costing no more than a planned overhaul — condition-based monitoring
+is **8% worse than a calendar**, and the dashboard says so rather than hiding it. It only
+starts paying above roughly 1.5x. Anyone whose failures are cheap should keep their
+calendar, and a tool that cannot say that is a sales pitch, not an analysis.
+
+### What does move the threshold
+
+The lead time does, by construction — and it has a sweet spot rather than a monotonic
+cost:
+
+| Notice required | Threshold | Saving vs calendar |
+|---|---|---|
+| 1 cycle | 5 | 17.7% |
+| 10 cycles | 10 | **29.3%** |
+| 20 cycles | 20 | 26.7% |
+| 30 cycles | 30 | 23.2% |
+| 60 cycles | 60 | 13.4% |
+
+Demanding *no* notice is worse than demanding ten, because the knife-edge threshold lets an
+engine through. Demanding sixty is worse again, because two months of notice means scrapping
+two months of good engine. The best answer on this fleet sits around ten cycles — and which
+value is actually available is a fact about the maintenance organisation, not about the data.
+
+---
+
+## 7. Limitations
+
+- **The threshold is set by the lead time, not by the cost.** On a dataset where the
+  model were less confident near failure, the cost ratio would bind and the picture
+  would differ. This conclusion is about FD001, not about predictive maintenance.
 - **20 evaluation engines is a small sample.** 26.7% is one draw from one seeded split.
   Repeated splits would give a range, and the honest reading is "roughly a quarter".
 - **The cost ratio and the lead time are assumptions, not measurements.** Both are stated
