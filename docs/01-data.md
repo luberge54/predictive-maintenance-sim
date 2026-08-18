@@ -42,9 +42,10 @@ The spread is the whole reason condition-based maintenance can beat a calendar. 
 longest-lived engine survives **2.8x** longer than the shortest. Any fixed interval is
 either scrapping good engines or losing bad ones — usually both at once.
 
-**Consequence for the cost model:** `NOMINAL_LIFE = 199`, so one wasted cycle costs
-`1 / 199 = 0.005025` preventive overhauls. This is read from the data at runtime, never
-typed into the code.
+**Consequence for the cost model:** one wasted cycle costs `1 / NOMINAL_LIFE` preventive
+overhauls, read from the data at runtime and never typed into the code. Across the whole
+fleet that median is 199 cycles; the trained model reports 202, because it reads the
+median of the 60 engines it was actually fitted on rather than all 100.
 
 ---
 
@@ -66,14 +67,22 @@ target that does not exist. The `RUL_FD001.txt` file exists precisely to prevent
 
 ## 4. Sensors
 
-**4 of the 21 sensors are constant across the entire fleet** and carry zero information:
+**6 of the 21 sensors hold a single value across the entire fleet** and carry zero
+information:
 
-`sensor_1`, `sensor_10`, `sensor_18`, `sensor_19`
+`sensor_1`, `sensor_5`, `sensor_10`, `sensor_16`, `sensor_18`, `sensor_19`
 
-They are dropped by detecting zero variance at runtime rather than by hard-coding this
+They are dropped by counting distinct values at runtime rather than by hard-coding this
 list — the same code then works unchanged on FD002–FD004, where the dead set differs.
 
-The remaining **17 sensors all correlate with RUL**; none is noise. The strongest:
+> **Why distinct values and not `std == 0`.** Four of the six report an exact zero
+> standard deviation. The other two report about `1e-15`: floating-point noise from
+> summing identical values. A `std > 0` test therefore kept `sensor_5` and `sensor_16`,
+> and *whether* it kept them depended on which engines happened to be in the split — the
+> model silently received 15, 17 or 18 columns depending on the run. Counting distinct
+> values has no tolerance to get wrong. There is a regression test for this.
+
+The remaining **15 sensors all correlate with RUL**; none is noise. The strongest:
 
 | Sensor | Correlation with RUL | Reads as |
 |---|---|---|
@@ -83,6 +92,8 @@ The remaining **17 sensors all correlate with RUL**; none is noise. The stronges
 | `sensor_7` | +0.657 | falls as the engine wears |
 | `sensor_15` | −0.643 | rises as the engine wears |
 | `sensor_21` | +0.636 | falls as the engine wears |
+
+The weakest of the 15 still reaches 0.128.
 
 A correlation around 0.7 on raw readings is a good sign for step 2: the degradation
 signal is real and strong enough that a simple model will find it. It also sets
@@ -105,11 +116,11 @@ within each condition before they meant anything.
 
 ## 6. What this settles for step 2
 
-- Drop zero-variance sensors, detected rather than listed.
-- Build rolling-window features over the 17 surviving sensors — single readings are noisy,
+- Drop constant sensors, detected by distinct-value count rather than listed.
+- Build rolling-window features over the 15 surviving sensors — single readings are noisy,
   trends are not.
 - Split **by engine**, never by row: rows from one engine are not independent, and mixing
-  them across the split leaks the answer.
+  them across the split leaks the answer. Three sets, not two — see `docs/02-model.md`.
 - Cap the training target at `RUL_CAP = 130`. Engines sit healthy for a long time before
   degrading, and "this engine has 300 cycles left" versus "280" is a distinction nobody
   makes a decision on. Capping stops the model spending capacity on it.

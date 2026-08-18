@@ -22,8 +22,8 @@ FLEET = {unit: 30 + unit for unit in range(1, 11)}
 def trained():
     """A model fitted on a small synthetic fleet."""
     fleet = make_fleet(FLEET, constant_sensors=("sensor_1",))
-    fit_frame, validation_frame = features.split_by_engine(fleet)
-    return model.train(fit_frame, validation_frame), validation_frame
+    split = features.split_by_engine(fleet)
+    return model.train(split.fit, split.tuning), split.tuning
 
 
 def test_trained_model_records_the_sensors_it_used(trained):

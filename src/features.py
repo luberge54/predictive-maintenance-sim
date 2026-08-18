@@ -20,6 +20,8 @@ separately on each split would hand different columns to fit and predict.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 
@@ -29,12 +31,19 @@ from src import config
 def usable_sensor_columns(train: pd.DataFrame) -> list[str]:
     """Sensors that actually move on the training fleet.
 
-    Four of the 21 are constant on FD001 and carry no information. They are detected
-    rather than hard-coded, so this works unchanged on the other subsets, where the dead
-    set differs.
+    Six of the 21 hold a single value on FD001 and carry no information. They are
+    detected rather than hard-coded, so this works unchanged on the other subsets, where
+    the dead set differs.
+
+    Deadness is decided by counting distinct values, not by testing the standard
+    deviation against zero. Two of the six constant sensors have a standard deviation of
+    around 1e-15 rather than an exact zero — floating-point noise from summing identical
+    values — so a `std > 0` test lets them through, and whether it does so depends on
+    which engines happen to be in the split. Counting distinct values has no such
+    tolerance to get wrong.
     """
-    spread = train[config.SENSOR_COLUMNS].std()
-    return spread[spread > 0].index.tolist()
+    distinct_values = train[config.SENSOR_COLUMNS].nunique()
+    return distinct_values[distinct_values > 1].index.tolist()
 
 
 def build_features(
@@ -57,7 +66,7 @@ def build_features(
         ValueError: if `frame` is not ordered by engine and cycle, which would make the
             rolling windows silently mix engines together.
     """
-    _require_chronological_order(frame)
+    require_chronological_order(frame)
 
     per_engine = frame.groupby(config.UNIT_COLUMN)[sensor_columns]
     parts = [
@@ -84,33 +93,69 @@ def cap_target(rul: pd.Series, cap: int = config.RUL_CAP) -> pd.Series:
     return rul.clip(upper=cap)
 
 
+@dataclass(frozen=True)
+class EngineSplit:
+    """Three disjoint sets of engines, each with exactly one job.
+
+    Keeping them separate is what makes the headline saving believable. A threshold
+    tuned on the same engines it is then scored against will always look good.
+    """
+
+    fit: pd.DataFrame
+    tuning: pd.DataFrame
+    evaluation: pd.DataFrame
+
+
 def split_by_engine(
     frame: pd.DataFrame,
-    validation_fraction: float = config.VALIDATION_SPLIT,
+    tuning_fraction: float = config.TUNING_SPLIT,
+    evaluation_fraction: float = config.EVALUATION_SPLIT,
     seed: int = config.RANDOM_SEED,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Split into training and validation sets **by engine**, never by row.
+) -> EngineSplit:
+    """Divide the fleet three ways **by engine**, never by row.
 
     Consecutive cycles of one engine are near-identical. Splitting by row would put cycle
-    99 in training and cycle 100 in validation, and the validation score would measure
-    memorisation rather than prediction.
+    99 in one set and cycle 100 in another, and every score would measure memorisation
+    rather than prediction.
 
     Raises:
-        ValueError: if the fraction would leave either side without an engine.
+        ValueError: if the fractions would leave any of the three sets empty.
     """
     engines = np.sort(frame[config.UNIT_COLUMN].unique())
-    validation_size = round(len(engines) * validation_fraction)
-    if not 0 < validation_size < len(engines):
+    tuning_size = round(len(engines) * tuning_fraction)
+    evaluation_size = round(len(engines) * evaluation_fraction)
+    fit_size = len(engines) - tuning_size - evaluation_size
+
+    if min(fit_size, tuning_size, evaluation_size) < 1:
         raise ValueError(
-            f"validation_fraction={validation_fraction} yields {validation_size} "
-            f"validation engines out of {len(engines)}; need at least one on each side."
+            f"Splitting {len(engines)} engines at tuning={tuning_fraction} and "
+            f"evaluation={evaluation_fraction} gives sizes "
+            f"{fit_size}/{tuning_size}/{evaluation_size}; each set needs at least one."
         )
 
     shuffled = np.random.default_rng(seed).permutation(engines)
-    validation_engines = set(shuffled[:validation_size].tolist())
+    return EngineSplit(
+        fit=_engines(frame, shuffled[tuning_size + evaluation_size :]),
+        tuning=_engines(frame, shuffled[:tuning_size]),
+        evaluation=_engines(frame, shuffled[tuning_size : tuning_size + evaluation_size]),
+    )
 
-    is_validation = frame[config.UNIT_COLUMN].isin(validation_engines)
-    return frame[~is_validation].copy(), frame[is_validation].copy()
+
+def require_chronological_order(frame: pd.DataFrame) -> None:
+    """Fail unless rows are grouped by engine and ordered by cycle.
+
+    Rolling windows and policy replays both walk each engine forwards in time. Out-of-
+    order rows silently produce plausible nonsense in either case.
+
+    Raises:
+        ValueError: if the rows are not sorted by engine then cycle.
+    """
+    keys = [config.UNIT_COLUMN, config.CYCLE_COLUMN]
+    if not frame[keys].equals(frame[keys].sort_values(keys)):
+        raise ValueError(
+            f"Rows must be sorted by {keys}, otherwise per-engine sequences are mixed "
+            f"together and every result derived from them is meaningless."
+        )
 
 
 # --------------------------------------------------------------------------------------
@@ -118,14 +163,9 @@ def split_by_engine(
 # --------------------------------------------------------------------------------------
 
 
-def _require_chronological_order(frame: pd.DataFrame) -> None:
-    """Rolling windows are only meaningful on rows grouped by engine, in cycle order."""
-    keys = [config.UNIT_COLUMN, config.CYCLE_COLUMN]
-    if not frame[keys].equals(frame[keys].sort_values(keys)):
-        raise ValueError(
-            f"Rows must be sorted by {keys} before building features, otherwise the "
-            f"rolling windows mix engines and cycles together."
-        )
+def _engines(frame: pd.DataFrame, engine_ids) -> pd.DataFrame:
+    """The rows belonging to `engine_ids`, as an independent copy."""
+    return frame[frame[config.UNIT_COLUMN].isin(set(engine_ids.tolist()))].copy()
 
 
 def _rolling_mean(per_engine, window: int) -> pd.DataFrame:

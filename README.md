@@ -45,11 +45,28 @@ No API key and no network access required — the project runs entirely offline.
   mirrored as constants in `src/config.py`.
 - **Step 1 done** — C-MAPSS FD001 loaded and validated (`src/data_loader.py`, 13 tests);
   findings written up in `docs/01-data.md` and reproducible with `python -m src.explore`.
-- **Step 2 done** — 103 rolling-window features and a gradient-boosted RUL model
-  (`src/features.py`, `src/model.py`, 18 tests). Validation RMSE 13.10, NASA test-set
-  RMSE 13.06, 7.85 within 50 cycles of failure. Write-up in `docs/02-model.md`;
-  retrain with `python -m src.model`.
-- **Next** — the decision layer: turn a predicted RUL into a recommendation.
+- **Step 2 done** — 91 rolling-window features and a gradient-boosted RUL model
+  (`src/features.py`, `src/model.py`). Held-out RMSE 13.39, NASA test-set RMSE 13.22.
+  Write-up in `docs/02-model.md`; retrain with `python -m src.model`.
+- **Step 3 done** — the decision layer (`src/decision.py`). Thresholds derived by
+  replaying the fleet at every candidate and pricing each one. **26.7% cheaper than a
+  cost-optimised calendar policy, 78.3% cheaper than running to failure**, measured on
+  engines that shaped neither the model nor the threshold. Write-up in
+  `docs/03-decision.md`; run with `python -m src.decision`.
+- **Next** — the Streamlit dashboard.
+
+61 tests, no network access, no API key.
+
+## The result that took the longest to get right
+
+Priced on cost alone, the optimal policy is "intervene five cycles before failure" —
+arithmetically correct, operationally impossible. The cost model prices wasted life and
+unplanned failure but puts no value on *notice*, and no shop sources a part in five
+flights.
+
+Adding the missing operator input — how much warning the shop actually needs — did not
+cost anything. It made the policy **cheaper** on unseen engines, because the knife-edge
+optimum had been overfitted to the engines that chose it. `docs/03-decision.md`, section 3.
 
 The raw `.txt` files are not committed. Download them into `data/raw/`; any entry point
 that needs them fails with the download URL rather than a bare traceback.

@@ -74,6 +74,16 @@ COST_RATIO_STEP = 0.5
 THRESHOLD_GRID_MIN = 1
 THRESHOLD_GRID_MAX = 150
 
+# How much notice the maintenance organisation needs before it can act: source the part,
+# book the hangar slot, roster the crew.
+#
+# This is an operator input, exactly like the cost ratio. It is not derived from the data
+# and there is no correct value in the dataset — it belongs to whoever runs the fleet.
+# It exists because without it the cost-optimal threshold collapses onto the cheapest
+# usable value and recommends intervening a handful of cycles before failure, which is
+# arithmetically optimal and operationally impossible. See docs/03-decision.md.
+MINIMUM_LEAD_TIME = 20
+
 # Candidate intervals for the calendar-based baseline, in cycles. It gets the same
 # optimisation pass as our own policy — beating a badly tuned baseline proves nothing.
 CALENDAR_INTERVAL_GRID_MIN = 10
@@ -86,9 +96,15 @@ CALENDAR_INTERVAL_GRID_MAX = 300
 # Fixed so that two runs of the pipeline produce the same numbers.
 RANDOM_SEED = 42
 
-# Fraction of engines held out to tune the decision thresholds. Split by engine, never
-# by row: rows from the same engine are not independent.
-VALIDATION_SPLIT = 0.2
+# The training engines are divided three ways, by engine and never by row: rows from the
+# same engine are not independent. Each set does exactly one job, so no number is ever
+# reported on data that helped produce it.
+#
+#   fit        (the remainder) fits the model
+#   tuning     measures model error and picks the intervention threshold
+#   evaluation reports the cost saving, and is read once
+TUNING_SPLIT = 0.2
+EVALUATION_SPLIT = 0.2
 
 # Rolling-window widths (in cycles) used to build the sensor features.
 ROLLING_WINDOWS = (5, 20)
@@ -105,6 +121,15 @@ DECISION_CRITICAL_RUL = 50
 
 # Trained artefact. Not committed (see .gitignore) — it is reproducible from the data.
 MODEL_FILE = MODELS_DIR / f"rul_model_{DATASET_ID}.joblib"
+
+# --------------------------------------------------------------------------------------
+# Recommendations
+# --------------------------------------------------------------------------------------
+
+# A healthy engine is told to come back partway to the point where the model's
+# uncertainty starts to matter, rather than exactly at it. Half the headroom leaves room
+# for the prediction to have been optimistic.
+RECHECK_SAFETY_FACTOR = 0.5
 
 
 def cost_of_failure(cost_ratio: float = DEFAULT_COST_RATIO) -> float:

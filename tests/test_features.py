@@ -32,6 +32,25 @@ def test_constant_sensors_are_excluded():
     assert len(usable) == len(config.SENSOR_COLUMNS) - len(DEAD_SENSORS)
 
 
+def test_a_constant_sensor_with_floating_point_noise_is_still_excluded():
+    """Regression: two real C-MAPSS sensors hold one value but report std ~1e-15.
+
+    Summing identical floats does not always give an exact zero variance. A `std > 0`
+    test therefore kept them, and whether it did depended on which engines were in the
+    split — the model silently received a different number of columns per run.
+    """
+    # Arrange — a sensor whose only value is large enough to lose precision when summed
+    fleet = make_fleet({1: 40, 2: 40})
+    noisy_constant = config.SENSOR_COLUMNS[3]
+    fleet[noisy_constant] = 1e16
+
+    # Act
+    usable = features.usable_sensor_columns(fleet)
+
+    # Assert
+    assert noisy_constant not in usable
+
+
 # --------------------------------------------------------------------------------------
 # Rolling windows
 # --------------------------------------------------------------------------------------
@@ -134,18 +153,46 @@ def test_cap_target_leaves_the_decision_zone_untouched():
 # --------------------------------------------------------------------------------------
 
 
-def test_split_puts_no_engine_on_both_sides():
+def test_no_engine_appears_in_two_sets():
     # Arrange
     fleet = make_fleet({unit: 10 for unit in range(1, 11)})
 
     # Act
-    fit_frame, validation_frame = features.split_by_engine(fleet)
+    split = features.split_by_engine(fleet)
 
-    # Assert — the whole point: consecutive cycles of one engine are near-identical
-    fit_engines = set(fit_frame[config.UNIT_COLUMN])
-    validation_engines = set(validation_frame[config.UNIT_COLUMN])
-    assert fit_engines.isdisjoint(validation_engines)
-    assert len(fit_engines) + len(validation_engines) == 10
+    # Assert — the whole point: consecutive cycles of one engine are near-identical, so
+    # an engine seen twice turns a score into a measure of memorisation
+    fit = set(split.fit[config.UNIT_COLUMN])
+    tuning = set(split.tuning[config.UNIT_COLUMN])
+    evaluation = set(split.evaluation[config.UNIT_COLUMN])
+    assert fit.isdisjoint(tuning)
+    assert fit.isdisjoint(evaluation)
+    assert tuning.isdisjoint(evaluation)
+
+
+def test_split_keeps_every_engine():
+    # Arrange
+    fleet = make_fleet({unit: 10 for unit in range(1, 11)})
+
+    # Act
+    split = features.split_by_engine(fleet)
+
+    # Assert — no engine may be dropped on the floor between the three sets
+    total = len(split.fit) + len(split.tuning) + len(split.evaluation)
+    assert total == len(fleet)
+
+
+def test_evaluation_set_is_reserved_and_never_the_largest():
+    # Arrange
+    fleet = make_fleet({unit: 10 for unit in range(1, 11)})
+
+    # Act
+    split = features.split_by_engine(fleet)
+
+    # Assert — most engines must go to fitting; the reserved sets are held back
+    assert split.fit[config.UNIT_COLUMN].nunique() == 6
+    assert split.tuning[config.UNIT_COLUMN].nunique() == 2
+    assert split.evaluation[config.UNIT_COLUMN].nunique() == 2
 
 
 def test_split_is_reproducible_for_a_given_seed():
@@ -153,17 +200,17 @@ def test_split_is_reproducible_for_a_given_seed():
     fleet = make_fleet({unit: 10 for unit in range(1, 11)})
 
     # Act
-    first = features.split_by_engine(fleet, seed=config.RANDOM_SEED)[1]
-    second = features.split_by_engine(fleet, seed=config.RANDOM_SEED)[1]
+    first = features.split_by_engine(fleet, seed=config.RANDOM_SEED).evaluation
+    second = features.split_by_engine(fleet, seed=config.RANDOM_SEED).evaluation
 
     # Assert
     assert set(first[config.UNIT_COLUMN]) == set(second[config.UNIT_COLUMN])
 
 
-def test_split_refuses_a_fraction_that_empties_a_side():
+def test_split_refuses_fractions_that_empty_a_set():
     # Arrange
     fleet = make_fleet({unit: 10 for unit in range(1, 11)})
 
     # Act / Assert
-    with pytest.raises(ValueError, match="at least one on each side"):
-        features.split_by_engine(fleet, validation_fraction=0.0)
+    with pytest.raises(ValueError, match="each set needs at least one"):
+        features.split_by_engine(fleet, tuning_fraction=0.0)

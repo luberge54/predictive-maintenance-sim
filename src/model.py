@@ -11,8 +11,8 @@ What the artefact carries alongside the estimator matters more than the estimato
 
 - **the sensor list** it was fitted on, so prediction cannot silently use different
   columns from training
-- **the validation RMSE**, which the decision layer turns into the width of the
-  "monitor closely" band
+- **the validation RMSE**, measured on the tuning engines, which the decision layer
+  turns into the width of the "monitor closely" band
 - **the fleet's nominal life**, which sets the cost of a wasted cycle
 
 Everything here is reproducible: same seed, same split, same numbers.
@@ -46,11 +46,13 @@ class TrainedModel:
         return pd.Series(self.estimator.predict(matrix), index=frame.index)
 
 
-def train(fit_frame: pd.DataFrame, validation_frame: pd.DataFrame) -> TrainedModel:
-    """Fit on `fit_frame` and measure honest error on held-out engines.
+def train(fit_frame: pd.DataFrame, tuning_frame: pd.DataFrame) -> TrainedModel:
+    """Fit on `fit_frame` and measure honest error on the held-out tuning engines.
 
-    The two frames must come from `features.split_by_engine`: no engine may appear in
-    both, or the validation RMSE is measuring memorisation.
+    Both frames come from `features.split_by_engine`, which guarantees no engine appears
+    in more than one set. The third set, `evaluation`, is not touched here: it exists so
+    the cost saving can be reported on engines that shaped neither the model nor the
+    threshold.
     """
     sensor_columns = features.usable_sensor_columns(fit_frame)
 
@@ -60,8 +62,8 @@ def train(fit_frame: pd.DataFrame, validation_frame: pd.DataFrame) -> TrainedMod
         features.cap_target(fit_frame[config.RUL_COLUMN]),
     )
 
-    predictions = estimator.predict(features.build_features(validation_frame, sensor_columns))
-    truth = features.cap_target(validation_frame[config.RUL_COLUMN])
+    predictions = estimator.predict(features.build_features(tuning_frame, sensor_columns))
+    truth = features.cap_target(tuning_frame[config.RUL_COLUMN])
 
     return TrainedModel(
         estimator=estimator,
@@ -112,9 +114,23 @@ def score_official_test_set(model: TrainedModel) -> dict[str, float]:
 
 
 def save(model: TrainedModel, path: Path = config.MODEL_FILE) -> Path:
-    """Write the trained artefact to disk, creating the directory if needed."""
+    """Write the trained artefact to disk, creating the directory if needed.
+
+    Stored as a plain dictionary of library types, never as a pickled `TrainedModel`.
+    Pickling a custom class records the module it was defined in, and a model trained by
+    `python -m src.model` records `__main__` — reloadable only from that same entry
+    point, and nowhere else. A dictionary carries no such dependency.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, path)
+    joblib.dump(
+        {
+            "estimator": model.estimator,
+            "sensor_columns": list(model.sensor_columns),
+            "validation_rmse": model.validation_rmse,
+            "nominal_life": model.nominal_life,
+        },
+        path,
+    )
     return path
 
 
@@ -123,26 +139,40 @@ def load(path: Path = config.MODEL_FILE) -> TrainedModel:
 
     Raises:
         FileNotFoundError: if the model has not been trained yet.
+        ValueError: if the file was written by an older artefact format.
     """
     if not path.exists():
         raise FileNotFoundError(
             f"No trained model at {path}\nTrain one with:  python -m src.model"
         )
-    return joblib.load(path)
+
+    payload = joblib.load(path)
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"{path} is in an old artefact format.\n"
+            f"Retrain with:  python -m src.model"
+        )
+    try:
+        return TrainedModel(**payload)
+    except TypeError as mismatch:
+        raise ValueError(
+            f"{path} does not carry the fields this version expects "
+            f"({mismatch}).\nRetrain with:  python -m src.model"
+        ) from mismatch
 
 
 def main() -> None:
     """Train, report, and save."""
-    train_all = data_loader.load_training_data()
-    fit_frame, validation_frame = features.split_by_engine(train_all)
+    split = features.split_by_engine(data_loader.load_training_data())
 
     print(
-        f"Fitting on {fit_frame[config.UNIT_COLUMN].nunique()} engines, "
-        f"validating on {validation_frame[config.UNIT_COLUMN].nunique()}."
+        f"Fitting on {split.fit[config.UNIT_COLUMN].nunique()} engines, "
+        f"measuring error on {split.tuning[config.UNIT_COLUMN].nunique()}, "
+        f"holding {split.evaluation[config.UNIT_COLUMN].nunique()} back for step 3."
     )
-    model = train(fit_frame, validation_frame)
+    model = train(split.fit, split.tuning)
 
-    _print_scores("Held-out validation engines (every cycle)", score(model, validation_frame))
+    _print_scores("Held-out tuning engines (every cycle)", score(model, split.tuning))
     _print_scores("NASA test engines (at cut-off only)", score_official_test_set(model))
 
     print(f"\n  usable sensors     : {len(model.sensor_columns)}")

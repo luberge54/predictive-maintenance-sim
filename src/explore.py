@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src import config, data_loader
+from src import config, data_loader, features
 
 SECTION_WIDTH = 78
 TOP_SENSORS_SHOWN = 6
@@ -69,13 +69,17 @@ def report_rul_sanity(train: pd.DataFrame, test: pd.DataFrame) -> None:
 
 
 def report_dead_sensors(train: pd.DataFrame) -> list[str]:
-    """Print and return the sensors that never move — they carry no information."""
-    _heading("4. Sensors with zero variance")
-    spread = train[config.SENSOR_COLUMNS].std()
-    dead = spread[spread == 0].index.tolist()
+    """Print and return the sensors that never move — they carry no information.
 
-    print(f"  {len(dead)} constant sensors, to be dropped: {dead}")
-    print(f"  {len(config.SENSOR_COLUMNS) - len(dead)} usable sensors")
+    Uses the same detection as the feature builder, so the report can never disagree
+    with what the model is actually fed.
+    """
+    _heading("4. Sensors holding a single value")
+    usable = features.usable_sensor_columns(train)
+    dead = [name for name in config.SENSOR_COLUMNS if name not in usable]
+
+    print(f"  {len(dead)} constant sensors, dropped: {dead}")
+    print(f"  {len(usable)} usable sensors")
     return dead
 
 
@@ -97,7 +101,9 @@ def report_operating_conditions(train: pd.DataFrame) -> None:
     _heading("6. Operating conditions")
     for name in config.OPERATIONAL_SETTING_COLUMNS:
         column = train[name]
-        verdict = "constant" if column.std() == 0 else "varies"
+        # Distinct values, not std == 0: constant float columns can carry ~1e-15 of
+        # summation noise, which makes a zero test answer differently per subset.
+        verdict = "constant" if column.nunique() == 1 else "varies"
         print(f"  {name:14s} {verdict:8s} min {column.min():>8.4f}  max {column.max():>8.4f}")
 
 

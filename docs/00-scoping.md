@@ -26,6 +26,13 @@ currency never matters — only the ratios do.
 | `C_PREVENTIVE` | `1.0` | The unit. One planned engine overhaul, done on our terms. |
 | `C_FAILURE` | `5.0` | An unplanned in-service failure costs 5x a planned overhaul. Slider range 1x–20x. |
 | `C_WASTED_CYCLE` | `C_PREVENTIVE / NOMINAL_LIFE` | Derived, not chosen. Throwing away a full engine life costs exactly one extra overhaul. |
+| `MINIMUM_LEAD_TIME` | `20` cycles | **Added in step 3.** Notice the shop needs to source a part and book a slot. An operator input like the cost ratio, not a fact about the data. |
+
+> `MINIMUM_LEAD_TIME` was not in the original scoping and had to be added once the
+> optimisation was actually run. Priced on cost alone, the cheapest policy is "intervene
+> five cycles before failure" — correct arithmetic, impossible operations. The cost model
+> above prices wasted life and unplanned failure but puts no value on notice, and that
+> gap only became visible when the numbers came out. See `docs/03-decision.md`, section 3.
 
 `NOMINAL_LIFE` is the median observed engine lifetime in the training set (~200 cycles on
 FD001). It is read from the data, never typed in by hand.
@@ -69,7 +76,7 @@ Thresholds are derived from the cost ratio, not chosen by hand.
 
 Grid search on the **validation set**, never on the test set:
 
-1. For every candidate threshold `T` in `1..150` cycles:
+1. For every candidate threshold `T` in `MINIMUM_LEAD_TIME..150` cycles:
 2. Replay the whole fleet under the policy "intervene the first cycle where `RUL_pred <= T`".
 3. Compute `total_cost` with the formula in section 1.
 4. `T_act` = the `T` that minimises `total_cost`.
@@ -102,11 +109,13 @@ project runs with no API key and no network access.
 
 The model is only worth something relative to what a plant does today.
 
+Priced on the 20 evaluation engines, at a 5x cost ratio:
+
 | Baseline | Policy | Total cost |
 |----------|--------|------------|
-| Run to failure | Repair only after breakdown | TBD — computed in step 3 |
-| Calendar-based | Repair every `N` cycles regardless of condition, `N` optimised by the same grid search | TBD — computed in step 3 |
-| **This project** | Condition-based, cost-optimised threshold | TBD — computed in step 3 |
+| Run to failure | Repair only after breakdown | 100.0 |
+| Calendar-based | Repair every 137 cycles, interval optimised by the same grid search | 29.6 |
+| **This project** | Condition-based, cost-optimised threshold of 20 cycles | **21.7** |
 
 The calendar baseline gets its own optimisation pass. Beating a deliberately badly-tuned
 baseline would prove nothing.
@@ -116,7 +125,11 @@ baseline would prove nothing.
 ## 4. Success metric
 
 **Headline number:** percentage of total maintenance cost saved versus the calendar-based
-baseline, at the chosen cost ratio.
+baseline, at the chosen cost ratio. **Result: 26.7%.**
+
+It is reported on a set of engines that shaped neither the model nor the threshold. The
+fleet is split three ways — 60 to fit, 20 to tune, 20 to report — because a threshold
+scored on the engines that chose it always looks good.
 
 Reported as a curve across the whole slider range (1x to 20x), not as a single number — so
 the honest cases where condition-based monitoring barely helps are visible too.
@@ -140,3 +153,7 @@ the headline.
 - **Test trajectories are censored.** In the C-MAPSS test set engines stop before failure, so
   the true RUL is known only at the final recorded cycle.
 - **Failure is binary and terminal.** No partial repairs, no degraded-but-flyable states.
+- **The lead time is an assumption too.** Twenty cycles is plausible, not sourced. It
+  changes the answer as much as the cost ratio does.
+- **Twenty evaluation engines is a small sample.** The headline is one draw from one
+  seeded split, so the honest reading is "roughly a quarter", not "26.7%".
