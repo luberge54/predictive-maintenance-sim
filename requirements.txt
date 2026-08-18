@@ -1,7 +1,24 @@
-pandas
-numpy
-scikit-learn
-matplotlib
-streamlit
-anthropic
-python-dotenv
+# Pinned versions so the project rebuilds identically on any machine.
+# Install with:  .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Data handling
+pandas==3.0.5
+numpy==2.5.2
+
+# Model
+scikit-learn==1.9.0
+
+# Charts
+matplotlib==3.11.1
+
+# Dashboard
+streamlit==1.61.1
+
+# Natural-language explanation of each recommendation (decision layer)
+anthropic==0.122.0
+
+# Reads the API key from .env — the key is never written in the code
+python-dotenv==1.2.3
+
+# Tests
+pytest==9.1.1
