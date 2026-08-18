@@ -11,10 +11,41 @@ The two ways a maintenance decision can be wrong:
 
 | Error | What happens | Cost |
 |-------|--------------|------|
-| False alarm — intervene too early | Machine pulled from service while still healthy; remaining useful life wasted | `C_early` = TBD |
-| Missed failure — intervene too late | Unplanned breakdown: repair, downtime, possible collateral damage | `C_late` = TBD |
+| False alarm — intervene too early | Machine pulled from service while still healthy; remaining useful life wasted | `C_early` = `C_PREVENTIVE` + `C_WASTED_CYCLE` x (cycles of life thrown away) |
+| Missed failure — intervene too late | Unplanned breakdown: repair, downtime, possible collateral damage | `C_late` = `C_FAILURE` |
 
-**Cost ratio** `C_late / C_early` = TBD
+**Cost ratio** `C_FAILURE / C_PREVENTIVE` = **5** (default)
+
+### The three parameters
+
+Everything is expressed relative to one planned preventive intervention, so the absolute
+currency never matters — only the ratios do.
+
+| Constant | Value | Where it comes from |
+|----------|-------|---------------------|
+| `C_PREVENTIVE` | `1.0` | The unit. One planned engine overhaul, done on our terms. |
+| `C_FAILURE` | `5.0` | An unplanned in-service failure costs 5x a planned overhaul. Slider range 1x–20x. |
+| `C_WASTED_CYCLE` | `C_PREVENTIVE / NOMINAL_LIFE` | Derived, not chosen. Throwing away a full engine life costs exactly one extra overhaul. |
+
+`NOMINAL_LIFE` is the median observed engine lifetime in the training set (~200 cycles on
+FD001). It is read from the data, never typed in by hand.
+
+### Why the third term exists
+
+Without `C_WASTED_CYCLE`, the cheapest possible policy is "replace every engine on cycle 1" —
+it never fails, so it never pays `C_FAILURE`. That is obviously absurd. The wasted-life term
+is what makes intervening too early genuinely expensive, and it is what turns this into a
+real optimisation instead of a threshold picked by feel.
+
+### Total cost of a policy, over the whole fleet
+
+```
+total_cost =   n_preventive_interventions x C_PREVENTIVE
+             + n_failures                 x C_FAILURE
+             + total_wasted_cycles        x C_WASTED_CYCLE
+```
+
+This single number is how every policy in section 3 is compared. Nothing else.
 
 > Do not hard-code a single ratio. Expose it as a slider in the dashboard and show how the
 > optimal intervention threshold moves across the range. The honest answer to "where does
@@ -28,11 +59,36 @@ How a predicted remaining useful life (RUL) becomes an instruction a plant manag
 
 | Recommendation | Condition | Meaning |
 |----------------|-----------|---------|
-| Intervene now | TBD | |
-| Monitor closely | TBD | |
-| Healthy for N more cycles | TBD | |
+| Intervene now | `RUL_pred <= T_act` | Schedule the overhaul in the next maintenance window. |
+| Monitor closely | `T_act < RUL_pred <= T_watch` | Not yet worth the downtime, but the model is no longer confident it is safe. Re-check every cycle. |
+| Healthy for N more cycles | `RUL_pred > T_watch` | Nothing to do. `N = RUL_pred - T_watch`, stated conservatively. |
 
 Thresholds are derived from the cost ratio, not chosen by hand.
+
+### How `T_act` is derived
+
+Grid search on the **validation set**, never on the test set:
+
+1. For every candidate threshold `T` in `1..150` cycles:
+2. Replay the whole fleet under the policy "intervene the first cycle where `RUL_pred <= T`".
+3. Compute `total_cost` with the formula in section 1.
+4. `T_act` = the `T` that minimises `total_cost`.
+
+Change the cost ratio, and `T_act` moves on its own. That is the entire point of the project.
+
+### How `T_watch` is derived
+
+`T_watch = T_act + RMSE_validation`
+
+The "monitor closely" band is exactly the width of the model's own error. It is the zone
+where the model says "you are safe" but its typical mistake is large enough that it could be
+wrong. Making the uncertainty visible instead of hiding it behind a single number.
+
+### Natural-language layer
+
+Each recommendation is turned into two or three sentences a non-technical reader can act on,
+stating: the recommendation, the predicted RUL, the cost ratio it assumes, and what would
+change the answer. This is the difference between a model output and a decision.
 
 ---
 
@@ -42,9 +98,12 @@ The model is only worth something relative to what a plant does today.
 
 | Baseline | Policy | Total cost |
 |----------|--------|------------|
-| Run to failure | Repair only after breakdown | TBD |
-| Calendar-based | Repair every N cycles regardless of condition | TBD |
-| **This project** | Condition-based, cost-optimised threshold | TBD |
+| Run to failure | Repair only after breakdown | TBD — computed in step 3 |
+| Calendar-based | Repair every `N` cycles regardless of condition, `N` optimised by the same grid search | TBD — computed in step 3 |
+| **This project** | Condition-based, cost-optimised threshold | TBD — computed in step 3 |
+
+The calendar baseline gets its own optimisation pass. Beating a deliberately badly-tuned
+baseline would prove nothing.
 
 ---
 
@@ -53,6 +112,9 @@ The model is only worth something relative to what a plant does today.
 **Headline number:** percentage of total maintenance cost saved versus the calendar-based
 baseline, at the chosen cost ratio.
 
+Reported as a curve across the whole slider range (1x to 20x), not as a single number — so
+the honest cases where condition-based monitoring barely helps are visible too.
+
 Model accuracy metrics (RMSE on RUL) are reported as supporting detail only. They are never
 the headline.
 
@@ -60,4 +122,15 @@ the headline.
 
 ## 5. Known limitations
 
-- TBD
+- **The data is simulated.** C-MAPSS is a NASA simulator, not fleet telemetry. Real sensor
+  data is dirtier: dropouts, drift, recalibrations.
+- **The costs are normalised, not sourced.** `C_FAILURE / C_PREVENTIVE = 5` is a plausible
+  industrial default, not a figure from an operator's books. The slider exists precisely
+  because this number belongs to whoever is using the tool.
+- **No logistics constraints.** Real maintenance has parts lead times, hangar slots and crew
+  availability. Here, "intervene now" is assumed to be immediately possible.
+- **Decisions are per-engine.** No fleet-level capacity limit — the model would happily
+  recommend grounding 40 engines the same week.
+- **Test trajectories are censored.** In the C-MAPSS test set engines stop before failure, so
+  the true RUL is known only at the final recorded cycle.
+- **Failure is binary and terminal.** No partial repairs, no degraded-but-flyable states.
