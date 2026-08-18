@@ -41,5 +41,11 @@ No API key and no network access required — the project runs entirely offline.
 
 ## Status
 
-Step 0 done — cost model and decision policy defined in `docs/00-scoping.md`, mirrored as
-constants in `src/config.py`. Next: load the C-MAPSS data.
+- **Step 0 done** — cost model and decision policy defined in `docs/00-scoping.md`,
+  mirrored as constants in `src/config.py`.
+- **Step 1 done** — C-MAPSS FD001 loaded and validated (`src/data_loader.py`, 13 tests);
+  findings written up in `docs/01-data.md` and reproducible with `python -m src.explore`.
+- **Next** — features and the RUL model.
+
+The raw `.txt` files are not committed. Download them into `data/raw/`; any entry point
+that needs them fails with the download URL rather than a bare traceback.
