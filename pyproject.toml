@@ -3,3 +3,12 @@
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-v"
+
+# Warnings from our own code must fail the suite: a deprecation ignored today is a
+# broken build after the next upgrade.
+filterwarnings = [
+    "error",
+    # joblib 1.5.3 sets .shape on a NumPy array while unpickling, which NumPy 2.5
+    # deprecated. Third-party, fixed upstream, and nothing we can act on here.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:joblib",
+]

@@ -98,6 +98,14 @@ ROLLING_WINDOWS = (5, 20)
 # which is a distinction nobody makes a decision on. Standard practice on this dataset.
 RUL_CAP = 130
 
+# The band of remaining life where the intervene-or-wait call is actually made. Error
+# inside it matters far more than error 300 cycles out, so it is reported separately
+# instead of being averaged away into the headline RMSE.
+DECISION_CRITICAL_RUL = 50
+
+# Trained artefact. Not committed (see .gitignore) — it is reproducible from the data.
+MODEL_FILE = MODELS_DIR / f"rul_model_{DATASET_ID}.joblib"
+
 
 def cost_of_failure(cost_ratio: float = DEFAULT_COST_RATIO) -> float:
     """Cost of one unplanned failure, for a given cost ratio.

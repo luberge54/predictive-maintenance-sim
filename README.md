@@ -45,7 +45,11 @@ No API key and no network access required — the project runs entirely offline.
   mirrored as constants in `src/config.py`.
 - **Step 1 done** — C-MAPSS FD001 loaded and validated (`src/data_loader.py`, 13 tests);
   findings written up in `docs/01-data.md` and reproducible with `python -m src.explore`.
-- **Next** — features and the RUL model.
+- **Step 2 done** — 103 rolling-window features and a gradient-boosted RUL model
+  (`src/features.py`, `src/model.py`, 18 tests). Validation RMSE 13.10, NASA test-set
+  RMSE 13.06, 7.85 within 50 cycles of failure. Write-up in `docs/02-model.md`;
+  retrain with `python -m src.model`.
+- **Next** — the decision layer: turn a predicted RUL into a recommendation.
 
 The raw `.txt` files are not committed. Download them into `data/raw/`; any entry point
 that needs them fails with the download URL rather than a bare traceback.
