@@ -27,6 +27,14 @@ TRAIN_FILE = RAW_DATA_DIR / f"train_{DATASET_ID}.txt"
 TEST_FILE = RAW_DATA_DIR / f"test_{DATASET_ID}.txt"
 TEST_RUL_FILE = RAW_DATA_DIR / f"RUL_{DATASET_ID}.txt"
 
+# The raw files are not committed (see .gitignore) — they are downloadable and large.
+# Quoted verbatim in the error message when a file is missing, so the reader is never
+# left guessing where the data was supposed to come from.
+DATASET_DOWNLOAD_URL = (
+    "https://phm-datasets.s3.amazonaws.com/NASA/"
+    "6.+Turbofan+Engine+Degradation+Simulation+Data+Set.zip"
+)
+
 # --------------------------------------------------------------------------------------
 # Dataset schema
 # --------------------------------------------------------------------------------------

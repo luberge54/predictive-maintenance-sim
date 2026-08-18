@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Lets the tests import the project as `from src import ...` when pytest runs from root.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-v"
